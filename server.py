@@ -22,9 +22,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 HOST = os.getenv("API_HOST", "0.0.0.0")
 PORT = int(os.getenv("API_PORT", "8080"))
 
+pw_instance = None
 browser = None
-context = None
-pw = None
 playwright_lock = asyncio.Lock()
 
 
@@ -53,36 +52,44 @@ def parse_netscape_cookies(filepath: str) -> list[dict]:
     return cookies
 
 
+COOKIES = parse_netscape_cookies(COOKIES_FILE)
+
+
 async def get_browser():
-    global browser, context, pw
-    if browser is None:
+    global pw_instance, browser
+    if pw_instance is None:
+        log.info("Launching playwright...")
+        pw_instance = await async_playwright().start()
+    if browser is None or not browser.is_connected():
         log.info("Launching browser...")
-        pw = await async_playwright().start()
-        browser = await pw.chromium.launch(
+        browser = await pw_instance.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
         )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            locale="en-US",
-        )
-        cookies = parse_netscape_cookies(COOKIES_FILE)
-        za_cookies = [c for c in cookies if "z.ai" in c["domain"]]
-        if za_cookies:
-            await context.add_cookies(za_cookies)
-            log.info(f"Loaded {len(za_cookies)} z.ai cookies")
-    return browser, context
+    return browser
+
+
+async def new_context():
+    br = await get_browser()
+    ctx = await br.new_context(
+        viewport={"width": 1920, "height": 1080},
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        locale="en-US",
+    )
+    za_cookies = [c for c in COOKIES if "z.ai" in c["domain"]]
+    if za_cookies:
+        await ctx.add_cookies(za_cookies)
+    return ctx
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    global browser, pw
+    global browser, pw_instance
     if browser:
         await browser.close()
-    if pw:
-        await pw.stop()
+    if pw_instance:
+        await pw_instance.stop()
 
 
 app = FastAPI(title="image.z.ai Generator API", lifespan=lifespan)
@@ -123,7 +130,7 @@ async def health():
 @app.post("/generate")
 async def generate(req: GenerateRequest):
     async with playwright_lock:
-        br, ctx = await get_browser()
+        ctx = await new_context()
         page = await ctx.new_page()
         try:
             log.info(f"Generating: {req.prompt[:80]}...")
@@ -188,12 +195,13 @@ async def generate(req: GenerateRequest):
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             await page.close()
+            await ctx.close()
 
 
 @app.post("/render")
 async def render(req: RenderRequest):
     async with playwright_lock:
-        br, ctx = await get_browser()
+        ctx = await new_context()
         page = await ctx.new_page()
         try:
             await page.set_viewport_size({"width": req.width, "height": req.height})
@@ -217,6 +225,7 @@ async def render(req: RenderRequest):
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             await page.close()
+            await ctx.close()
 
 
 if __name__ == "__main__":
