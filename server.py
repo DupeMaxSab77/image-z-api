@@ -137,6 +137,26 @@ async def generate(req: GenerateRequest):
             await page.goto("https://image.z.ai", wait_until="domcontentloaded", timeout=60000)
             await page.wait_for_timeout(5000)
 
+            current_url = page.url
+            log.info(f"Current URL: {current_url}")
+
+            if "auth" in current_url or "oauth" in current_url or "consent" in current_url:
+                log.info("OAuth consent detected, handling...")
+                try:
+                    checkbox = page.locator('input[type="checkbox"]').first
+                    if await checkbox.is_visible():
+                        await checkbox.check()
+                        await page.wait_for_timeout(500)
+                except Exception:
+                    pass
+                try:
+                    continue_btn = page.locator('button:has-text("Continue")')
+                    if await continue_btn.is_visible():
+                        await continue_btn.click()
+                        await page.wait_for_timeout(5000)
+                except Exception:
+                    pass
+
             textarea = page.locator('textarea[placeholder*="creative description"]')
             await textarea.wait_for(state="visible", timeout=15000)
             await textarea.fill(req.prompt)
