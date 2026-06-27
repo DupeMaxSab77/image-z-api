@@ -1,0 +1,127 @@
+========================================
+  IMAGE.Z.AI GENERATOR API - REFERENCE
+========================================
+
+Base URL: http://localhost:8080
+Interactive Docs: http://localhost:8080/docs
+
+----------------------------------------
+ENDPOINTS
+----------------------------------------
+
+1. GET /
+   Description: API info and endpoint list
+   Response:
+     {
+       "api": "image.z.ai Generator",
+       "endpoints": { ... },
+       "docs": "/docs"
+     }
+
+2. GET /health
+   Description: Health check
+   Response:
+     { "status": "ok" }
+
+3. POST /generate
+   Description: Generate an AI image via image.z.ai using your cookies.
+   
+   Request Body (JSON):
+     {
+       "prompt": "string (required) - Description of the image to generate",
+       "wait_timeout": "int (optional, default=120) - Max seconds to wait for image"
+     }
+   
+   Response (JSON):
+     {
+       "success": true,
+       "prompt": "your prompt",
+       "filename": "img_1234567890.png",
+       "url": "http://localhost:8080/images/img_1234567890.png",
+       "size_bytes": 194088
+     }
+   
+   Example (curl):
+     curl -X POST http://localhost:8080/generate \
+       -H "Content-Type: application/json" \
+       -d '{"prompt": "A futuristic city at sunset"}'
+   
+   Example (Python requests):
+     import requests
+     r = requests.post("http://localhost:8080/generate",
+                       json={"prompt": "A cute cat on the moon"})
+     data = r.json()
+     print(data["url"])  # Direct link to download the image
+
+4. POST /render
+   Description: Render raw HTML to a screenshot image.
+   
+   Request Body (JSON):
+     {
+       "html": "string (required) - HTML content to render",
+       "width": "int (optional, default=1920)",
+       "height": "int (optional, default=1080)",
+       "wait_ms": "int (optional, default=2000) - Wait time after load (ms)"
+     }
+   
+   Response (JSON):
+     {
+       "success": true,
+       "filename": "render_1234567890.png",
+       "url": "http://localhost:8080/images/render_1234567890.png",
+       "size_bytes": 52000
+     }
+   
+   Example (curl):
+     curl -X POST http://localhost:8080/render \
+       -H "Content-Type: application/json" \
+       -d '{"html": "<h1 style=\"color:red\">Hello</h1>"}'
+
+5. GET /images/{filename}
+   Description: Download a previously generated image.
+   
+   Example:
+     http://localhost:8080/images/img_1782588515954.png
+
+----------------------------------------
+SETUP & RUN
+----------------------------------------
+
+Requirements:
+  - Python 3.10+
+  - Playwright with Chromium installed
+
+Install:
+  python3 -m venv venv
+  source venv/bin/activate
+  pip install fastapi uvicorn playwright
+  playwright install chromium
+
+Run:
+  python server.py
+
+Environment Variables:
+  API_HOST=0.0.0.0    (default)
+  API_PORT=8080       (default)
+
+----------------------------------------
+NOTES
+----------------------------------------
+
+- The API uses cookies from cookies.txt to authenticate with image.z.ai.
+- Cookies are from Netscape format (exported from browser).
+- Cookies include: image.z.ai, chat.z.ai sessions.
+- Images are saved in the output/ directory.
+- The server serves images via /images/ static route.
+- For production: use a reverse proxy (nginx/caddy) + HTTPS.
+- Cookies may expire - re-export from browser if generation fails.
+
+----------------------------------------
+FILES
+----------------------------------------
+
+server.py           - Main API server (FastAPI + Playwright)
+generate.py         - Standalone script (CLI usage)
+cookies.txt         - Browser cookies for image.z.ai auth
+output/             - Generated images directory
+API_REFERENCE.txt   - This file
