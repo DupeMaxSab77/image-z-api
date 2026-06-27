@@ -134,48 +134,50 @@ async def generate(req: GenerateRequest):
         page = await ctx.new_page()
         try:
             log.info(f"Generating: {req.prompt[:80]}...")
-            await page.goto("https://image.z.ai", wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(3000)
+            await page.goto("https://image.z.ai", wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(5000)
 
             textarea = page.locator('textarea[placeholder*="creative description"]')
-            await textarea.wait_for(state="visible", timeout=10000)
+            await textarea.wait_for(state="visible", timeout=15000)
             await textarea.fill(req.prompt)
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(1000)
 
             btn = page.locator('button:has-text("Start Generation")')
             await btn.wait_for(state="visible", timeout=5000)
 
             for _ in range(30):
-                if await btn.get_attribute("disabled") is None:
+                is_disabled = await btn.get_attribute("disabled")
+                if is_disabled is None:
                     break
                 await page.wait_for_timeout(300)
 
-            try:
-                async with page.expect_navigation(timeout=15000):
-                    await btn.click()
-            except Exception:
-                await btn.click()
+            await btn.click()
+            log.info("Clicked generate, waiting for image...")
 
             await page.wait_for_timeout(5000)
-            log.info("Clicked generate, waiting for image...")
 
             image_url = None
             start = time.time()
             while time.time() - start < req.wait_timeout:
                 try:
-                    imgs = await page.query_selector_all('img[src*="z-ai-audio.chatglm.cn"]')
-                    for img in reversed(imgs):
-                        src = await img.get_attribute("src")
-                        if src and "z_image_test" in src:
-                            image_url = src
-                            break
-                except Exception:
-                    pass
+                    content = await page.content()
+                    if "z-ai-audio.chatglm.cn" in content:
+                        imgs = await page.query_selector_all('img')
+                        for img in imgs:
+                            src = await img.get_attribute("src") or ""
+                            if "z_image_test" in src:
+                                image_url = src
+                                break
+                except Exception as e:
+                    log.warning(f"Polling error: {e}")
                 if image_url:
                     break
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(3000)
 
             if not image_url:
+                debug_path = os.path.join(OUTPUT_DIR, "debug.png")
+                await page.screenshot(path=debug_path)
+                log.error(f"No image found, debug saved to {debug_path}")
                 raise HTTPException(status_code=504, detail="Image generation timed out")
 
             resp = await page.request.get(image_url)
