@@ -150,18 +150,27 @@ async def generate(req: GenerateRequest):
                     break
                 await page.wait_for_timeout(300)
 
-            await btn.click()
+            try:
+                async with page.expect_navigation(timeout=15000):
+                    await btn.click()
+            except Exception:
+                await btn.click()
+
+            await page.wait_for_timeout(5000)
             log.info("Clicked generate, waiting for image...")
 
             image_url = None
             start = time.time()
             while time.time() - start < req.wait_timeout:
-                imgs = await page.query_selector_all('img[src*="z-ai-audio.chatglm.cn"]')
-                for img in reversed(imgs):
-                    src = await img.get_attribute("src")
-                    if src and "z_image_test" in src:
-                        image_url = src
-                        break
+                try:
+                    imgs = await page.query_selector_all('img[src*="z-ai-audio.chatglm.cn"]')
+                    for img in reversed(imgs):
+                        src = await img.get_attribute("src")
+                        if src and "z_image_test" in src:
+                            image_url = src
+                            break
+                except Exception:
+                    pass
                 if image_url:
                     break
                 await page.wait_for_timeout(2000)
